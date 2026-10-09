@@ -1,0 +1,12 @@
+# Override for continuous monitoring: keeps the runner looping forever.
+#
+#   docker compose --file docker-compose.yml --file docker-compose.monitoring.yml up --detach
+#
+# RUN_INTERVAL_SECONDS makes entrypoint.sh loop (sleep after each full run);
+# `restart: unless-stopped` brings the container back after a crash or reboot.
+services:
+  s3pulse-runner:
+    restart: unless-stopped
+    environment:
+      RUN_INTERVAL_SECONDS: ${RUN_INTERVAL_SECONDS:-300}
+      PROFILE: ${PROFILE:-probe}

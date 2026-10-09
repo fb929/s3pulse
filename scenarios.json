@@ -1,0 +1,74 @@
+{
+  "_comment": "Each scenario: name, profiles, command (put|get|mixed|delete|list|stat|multipart), obj_size, concurrent, duration (seconds), objects, extra_args. null = use DEFAULT_* from .env. `overrides.<profile>` replaces fields when running that profile, so probe stays light and load stays heavy.",
+  "scenarios": [
+    {
+      "name": "put_small",
+      "profiles": ["probe", "load"],
+      "command": "put",
+      "obj_size": "4KiB",
+      "concurrent": null,
+      "duration": null,
+      "objects": null,
+      "extra_args": [],
+      "overrides": {
+        "load": { "concurrent": 32, "duration": 120 }
+      }
+    },
+    {
+      "name": "get_medium",
+      "profiles": ["probe", "load"],
+      "command": "get",
+      "obj_size": "1MiB",
+      "concurrent": null,
+      "duration": null,
+      "objects": 50,
+      "extra_args": [],
+      "overrides": {
+        "load": { "concurrent": 16, "duration": 120, "objects": 1000 }
+      }
+    },
+    {
+      "name": "list_1k",
+      "profiles": ["probe", "load"],
+      "command": "list",
+      "obj_size": "1KiB",
+      "concurrent": 2,
+      "duration": null,
+      "objects": 1000,
+      "extra_args": [],
+      "overrides": {
+        "load": { "concurrent": 8, "duration": 60 }
+      }
+    },
+    {
+      "name": "put_medium",
+      "profiles": ["load"],
+      "command": "put",
+      "obj_size": "1MiB",
+      "concurrent": 16,
+      "duration": 120,
+      "objects": null,
+      "extra_args": []
+    },
+    {
+      "name": "put_large",
+      "profiles": ["load"],
+      "command": "put",
+      "obj_size": "64MiB",
+      "concurrent": 4,
+      "duration": 120,
+      "objects": null,
+      "extra_args": []
+    },
+    {
+      "name": "mixed_medium",
+      "profiles": ["load"],
+      "command": "mixed",
+      "obj_size": "1MiB",
+      "concurrent": 16,
+      "duration": 120,
+      "objects": 1000,
+      "extra_args": []
+    }
+  ]
+}

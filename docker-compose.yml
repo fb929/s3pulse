@@ -1,0 +1,89 @@
+# s3pulse - MinIO Warp benchmarks against an S3-compatible endpoint.
+#
+# Default run:          docker compose run --rm s3pulse-runner
+# Local smoke test:     docker compose --profile selftest up --abort-on-container-exit s3pulse-selftest
+# Monitoring (loop):    docker compose --file docker-compose.yml --file docker-compose.monitoring.yml up --detach
+#
+# All settings come from .env (see .env.example). Values below are only defaults.
+
+x-runner-common: &runner-common
+  build:
+    context: .
+    args:
+      WARP_IMAGE: ${WARP_IMAGE:-minio/warp:latest}
+  image: s3pulse-runner:${S3PULSE_VERSION:-0.1.0}
+  volumes:
+    - results:/results
+
+services:
+  # Runner targeting the real (external) S3-compatible endpoint.
+  s3pulse-runner:
+    <<: *runner-common
+    container_name: s3pulse-runner
+    environment:
+      S3_ENDPOINT: ${S3_ENDPOINT:?set S3_ENDPOINT in .env (host:port, no scheme)}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY in .env}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY in .env}
+      S3_BUCKET: ${S3_BUCKET:-s3pulse}
+      S3_TLS: ${S3_TLS:-false}
+      S3_TLS_INSECURE: ${S3_TLS_INSECURE:-false}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_LOOKUP: ${S3_LOOKUP:-path}
+      PROFILE: ${PROFILE:-probe}
+      DEFAULT_DURATION: ${DEFAULT_DURATION:-30}
+      DEFAULT_CONCURRENCY: ${DEFAULT_CONCURRENCY:-4}
+      SINK_TYPE: ${SINK_TYPE:-stub}
+      SINK_URL: ${SINK_URL:-}
+      SINK_HTTP_BEARER_TOKEN: ${SINK_HTTP_BEARER_TOKEN:-}
+      RUN_LABEL: ${RUN_LABEL:-default}
+      RUN_INTERVAL_SECONDS: ${RUN_INTERVAL_SECONDS:-}
+      DRY_RUN: ${DRY_RUN:-false}
+      WARP_EXTRA_ARGS: ${WARP_EXTRA_ARGS:-}
+
+  # Local MinIO used only by the `selftest` profile. Never touches the real storage.
+  minio-selftest:
+    image: ${MINIO_IMAGE:-minio/minio:latest}
+    profiles: ["selftest"]
+    container_name: s3pulse-minio-selftest
+    command: ["server", "/data", "--address", ":9000"]
+    environment:
+      MINIO_ROOT_USER: s3pulse-selftest
+      MINIO_ROOT_PASSWORD: s3pulse-selftest-secret
+    healthcheck:
+      test: ["CMD", "curl", "--silent", "--fail", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    tmpfs:
+      - /data
+
+  # Runner targeting the local MinIO (profile `selftest`): short durations, stub sink.
+  s3pulse-selftest:
+    <<: *runner-common
+    profiles: ["selftest"]
+    container_name: s3pulse-selftest
+    depends_on:
+      minio-selftest:
+        condition: service_healthy
+    environment:
+      S3_ENDPOINT: minio-selftest:9000
+      S3_ACCESS_KEY: s3pulse-selftest
+      S3_SECRET_KEY: s3pulse-selftest-secret
+      S3_BUCKET: s3pulse-selftest
+      S3_TLS: "false"
+      S3_TLS_INSECURE: "false"
+      S3_REGION: us-east-1
+      S3_LOOKUP: path
+      PROFILE: ${PROFILE:-probe}
+      DEFAULT_DURATION: ${SELFTEST_DURATION:-5}
+      DEFAULT_CONCURRENCY: ${DEFAULT_CONCURRENCY:-4}
+      SINK_TYPE: ${SINK_TYPE:-stub}
+      SINK_URL: ${SINK_URL:-}
+      SINK_HTTP_BEARER_TOKEN: ${SINK_HTTP_BEARER_TOKEN:-}
+      RUN_LABEL: selftest
+      RUN_INTERVAL_SECONDS: ""
+      DRY_RUN: ${DRY_RUN:-false}
+      WARP_EXTRA_ARGS: ${WARP_EXTRA_ARGS:-}
+
+volumes:
+  results:

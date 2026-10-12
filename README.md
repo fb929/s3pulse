@@ -18,18 +18,18 @@ Stack: bash + jq + curl + warp inside an Alpine image. No Python, no frameworks.
    ```bash
    make build
    ```
-3. Smoke-test the whole pipeline against a throwaway local MinIO (no real storage touched):
+3. Smoke-test the whole pipeline against a throwaway local SeaweedFS S3 server (no real storage touched):
    ```bash
    make selftest
    ```
 4. Run the probe profile against the real endpoint once:
    ```bash
-   make run                # PROFILE=probe
-   make run PROFILE=load   # full load profile
+   make run                # PROFILE from .env (probe by default)
+   make run PROFILE=load   # override .env for this run
    ```
-5. Pick up the results:
+5. Pick up the results (bind-mounted to `./results` by default, `RESULTS_PATH` in `.env`):
    ```bash
-   docker compose run --rm --entrypoint sh s3pulse-runner -c 'ls /results/latest && cat /results/latest/probe-put_small.json'
+   ls results/latest && cat results/latest/probe-put_small.json
    ```
 
 ### Point it at a real S3-compatible endpoint
@@ -81,9 +81,10 @@ All settings come from `.env` (documented in `.env.example`) and reach the conta
 | `RUN_LABEL` | `default` | Stable label for the target (e.g. `prod-s3-eu`); Prometheus `instance` label. `[A-Za-z0-9._-]` only. |
 | `RUN_INTERVAL_SECONDS` | empty | If set, loop forever and sleep N seconds after each full run. Empty = run once and exit. |
 | `DRY_RUN` | `false` | Sinks print the exact request (URL, headers without secrets, body) instead of sending it. |
+| `RESULTS_PATH` | `./results` | Host directory bind-mounted at `/results` (raw benchdata, normalized JSON, logs). |
 | `WARP_EXTRA_ARGS` | empty | Extra warp flags appended to every scenario, e.g. `--disable-multipart --md5`. |
 | `WARP_IMAGE` | `minio/warp:latest` | Source image for the warp binary (build arg). Pin a tag for reproducible numbers. |
-| `MINIO_IMAGE` | `minio/minio:latest` | Image for the selftest MinIO. |
+| `SELFTEST_S3_IMAGE` | `chrislusf/seaweedfs:latest` | S3 server image for the selftest profile (MinIO images are no longer anonymously pullable). |
 | `SELFTEST_DURATION` | `5` | Scenario duration used by `make selftest`. |
 
 ### Profiles and scenarios
@@ -120,7 +121,7 @@ S3-compatibility notes from `warp --help`: `--lookup path` forces path-style add
 
 ## Results
 
-Everything lands in the `results` volume (mounted at `/results`):
+Everything lands in `RESULTS_PATH` on the host (default `./results`, bind-mounted at `/results`; a named volume is not used because on macOS it would be hidden inside the Docker Desktop VM):
 
 ```
 /results/<run_id>/<scenario>.json          normalized result
@@ -253,7 +254,7 @@ Append an object to `scenarios.json`:
 
 ## Makefile targets
 
-`make build`, `make run [PROFILE=load]`, `make up`, `make selftest [SELFTEST_DURATION=5]`, `make down`, `make lint` (shellcheck, `set -euo pipefail` check, `docker compose config` for all three variants, short-flag grep), `make clean-results`.
+`make build`, `make run [PROFILE=load]`, `make up`, `make selftest [SELFTEST_DURATION=5]`, `make down`, `make lint` (shellcheck, `set -euo pipefail` check, `docker compose config` for all three variants, short-flag grep), `make clean-results` (wipes `RESULTS_PATH`).
 
 ## Assumptions
 
@@ -263,7 +264,7 @@ Append an object to `scenarios.json`:
 - Latency percentiles are a request-weighted mean of warp's per-segment percentiles, not an exact run-wide percentile.
 - `mixed` scenarios report totals across GET/PUT/STAT/DELETE under `operation: MIXED`.
 - Per-profile tuning lives in `scenarios.json` `overrides.<profile>`; `.env` `DEFAULT_*` apply to scenarios that leave a field `null`.
-- A single runner per results volume; interval mode is meant to be started through `docker-compose.monitoring.yml`.
+- A single runner per results directory; interval mode is meant to be started through `docker-compose.monitoring.yml`.
 - A warp run is killed after `3 x duration + 180s`, producing a failed result instead of hanging the loop.
 - The `http_json` receiver accepts any 2xx; authentication, if any, is a bearer token (`SINK_HTTP_BEARER_TOKEN`).
 - Label values (`RUN_LABEL`, profile, scenario) are restricted to `[A-Za-z0-9._-]` so they can be used in the Pushgateway URL path without encoding.

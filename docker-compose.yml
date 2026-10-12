@@ -1,7 +1,7 @@
 # s3pulse - MinIO Warp benchmarks against an S3-compatible endpoint.
 #
 # Default run:          docker compose run --rm s3pulse-runner
-# Local smoke test:     docker compose --profile selftest up --abort-on-container-exit s3pulse-selftest
+# Local smoke test:     make selftest
 # Monitoring (loop):    docker compose --file docker-compose.yml --file docker-compose.monitoring.yml up --detach
 #
 # All settings come from .env (see .env.example). Values below are only defaults.
@@ -13,7 +13,9 @@ x-runner-common: &runner-common
       WARP_IMAGE: ${WARP_IMAGE:-minio/warp:latest}
   image: s3pulse-runner:${S3PULSE_VERSION:-0.1.0}
   volumes:
-    - results:/results
+    # Bind mount so results are visible on the host (named volumes live inside the
+    # Docker Desktop VM on macOS). Override with RESULTS_PATH in .env.
+    - ${RESULTS_PATH:-./results}:/results
 
 services:
   # Runner targeting the real (external) S3-compatible endpoint.
@@ -40,33 +42,37 @@ services:
       DRY_RUN: ${DRY_RUN:-false}
       WARP_EXTRA_ARGS: ${WARP_EXTRA_ARGS:-}
 
-  # Local MinIO used only by the `selftest` profile. Never touches the real storage.
-  minio-selftest:
-    image: ${MINIO_IMAGE:-minio/minio:latest}
+  # Local S3-compatible server used only by the `selftest` profile. Never touches
+  # the real storage. SeaweedFS is used because MinIO images are no longer
+  # anonymously pullable (removed from Docker Hub, quay.io requires login).
+  # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY create a static admin identity
+  # (weed/s3api/auth_credentials.go); buckets are auto-created for admins.
+  s3-selftest:
+    image: ${SELFTEST_S3_IMAGE:-chrislusf/seaweedfs:latest}
     profiles: ["selftest"]
-    container_name: s3pulse-minio-selftest
-    command: ["server", "/data", "--address", ":9000"]
+    container_name: s3pulse-s3-selftest
+    command: ["server", "-s3", "-s3.port=9000", "-ip.bind=0.0.0.0"]
     environment:
-      MINIO_ROOT_USER: s3pulse-selftest
-      MINIO_ROOT_PASSWORD: s3pulse-selftest-secret
+      AWS_ACCESS_KEY_ID: s3pulse-selftest
+      AWS_SECRET_ACCESS_KEY: s3pulse-selftest-secret
     healthcheck:
-      test: ["CMD", "curl", "--silent", "--fail", "http://127.0.0.1:9000/minio/health/live"]
+      test: ["CMD", "curl", "--silent", "--fail", "http://127.0.0.1:9000/status"]
       interval: 3s
       timeout: 3s
-      retries: 20
+      retries: 30
     tmpfs:
       - /data
 
-  # Runner targeting the local MinIO (profile `selftest`): short durations, stub sink.
+  # Runner targeting the local S3 server (profile `selftest`): short durations, stub sink.
   s3pulse-selftest:
     <<: *runner-common
     profiles: ["selftest"]
     container_name: s3pulse-selftest
     depends_on:
-      minio-selftest:
+      s3-selftest:
         condition: service_healthy
     environment:
-      S3_ENDPOINT: minio-selftest:9000
+      S3_ENDPOINT: s3-selftest:9000
       S3_ACCESS_KEY: s3pulse-selftest
       S3_SECRET_KEY: s3pulse-selftest-secret
       S3_BUCKET: s3pulse-selftest
@@ -84,6 +90,3 @@ services:
       RUN_INTERVAL_SECONDS: ""
       DRY_RUN: ${DRY_RUN:-false}
       WARP_EXTRA_ARGS: ${WARP_EXTRA_ARGS:-}
-
-volumes:
-  results:

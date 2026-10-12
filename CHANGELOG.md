@@ -12,5 +12,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Normalized per-scenario result JSON (`throughput_mib_s`, `objects_per_s`, latency p50/p90/p99, errors, success).
 - Pluggable sinks: `stub` (stdout + `/results`), `pushgateway` (Prometheus text exposition, HTTP PUT, stable grouping key), `http_json` (POST with retries).
 - Interval mode (`RUN_INTERVAL_SECONDS`) with graceful SIGTERM/SIGINT handling and `flock` overlap protection.
-- `selftest` compose profile with a local MinIO for end-to-end smoke tests.
+- `selftest` compose profile with a local SeaweedFS S3 server for end-to-end smoke tests (MinIO images are no longer anonymously pullable).
+- Results bind-mounted from the host (`RESULTS_PATH`, default `./results`).
 - `DRY_RUN` mode for sinks, Makefile targets `up`, `run`, `selftest`, `down`, `lint`.
